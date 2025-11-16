@@ -16,10 +16,16 @@ The typical flow is:
 
 Once the app is running, you can test it by opening a URL like this:
 
-```text
 http://localhost:3005/?appId=yourAppId&mToken=yourMToken
 
-.env
+# Install dependencies
+npm install
+
+# Run the dev server
+npm run dev
+
+# .env
+```text
 # ---- Postgres / Prisma ----
 DATABASE_URL="your-prisma-or-postgres-connection-string"
 
@@ -32,11 +38,6 @@ AGENT_ID="your-dga-agent-id"
 PORT=3005
 NODE_ENV=production
 
-# Install dependencies
-npm install
-
-# Run the dev server
-npm run dev
 
 
 
