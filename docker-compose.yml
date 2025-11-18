@@ -1,36 +1,17 @@
-
 services:
   web:
-    # สร้าง image จาก Dockerfile ในโฟลเดอร์ปัจจุบัน
     build: .
-
-    # restart อัตโนมัติถ้า container ล้ม
+    container_name: test2-web
     restart: unless-stopped
-
-    # โหลดค่าตัวแปรจากไฟล์ .env
     env_file:
       - .env
-
     environment:
-      NODE_ENV: "production"
-      # ถ้าใน .env มี PORT ก็จะ override port ตรง ports ให้โดยอัตโนมัติ
-
+      NODE_ENV: production
+      PORT: 3005
     ports:
-      # เปิด port ตามที่กำหนด (ใช้ค่า PORT จาก .env ถ้ามี)
-      - "${PORT:-3005}:${PORT:-3005}"
-
-    # Prisma migrate ก่อน แล้วค่อย start app
+      - "3005:3005"
     command: >
       sh -c "
-      npx prisma migrate deploy &&
-      npm start
+        npx prisma migrate deploy &&
+        node server.js
       "
-
-    # ถ้าต้องการให้ container คุยกับ DB ที่รันใน docker อื่น ให้ uncomment ได้
-    # networks:
-    #   - my-network
-
-# ประกาศ network (optional)
-# networks:
-#   my-network:
-#     driver: bridge
