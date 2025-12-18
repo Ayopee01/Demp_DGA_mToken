@@ -1,17 +1,25 @@
 services:
   web:
     build: .
-    container_name: test2-web
     restart: unless-stopped
+
+    # ❌ แนะนำลบ container_name เพื่อไม่ให้ชน
+    # container_name: test2-web
+
     env_file:
       - .env
+
     environment:
       NODE_ENV: production
       PORT: 3005
+      HOSTNAME: 0.0.0.0
+
     ports:
       - "3005:3005"
+
+    # รัน migrate แบบไม่ทำให้ container ล้ม
     command: >
       sh -c "
-        npx prisma migrate deploy &&
+        npx prisma migrate deploy || echo '⚠️ Prisma migrate skipped';
         node server.js
       "
