@@ -35,21 +35,42 @@ function toUserDto(user: {
   }
 }
 
-// ป้องกัน caching เวลา dev
 export const dynamic = 'force-dynamic'
 
+function safeJsonParse(text: string) {
+  if (!text || !text.trim()) return null
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+async function readResp(resp: Response) {
+  const contentType = resp.headers.get('content-type') || ''
+  const text = await resp.text().catch(() => '')
+  const json = contentType.includes('application/json') ? safeJsonParse(text) : safeJsonParse(text)
+  return { contentType, text, json }
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>> {
-  const body = (await req.json()) as Partial<EgovRequestBody>
+  let body: Partial<EgovRequestBody> | null = null
+  try {
+    body = (await req.json()) as Partial<EgovRequestBody>
+  } catch {
+    // กันกรณี body ว่าง/ไม่ใช่ JSON
+    return NextResponse.json(
+      { ok: false, error: 'Request body must be JSON', step: 'db' },
+      { status: 400 }
+    )
+  }
+
   const appId = body.appId
   const mToken = body.mToken
 
   if (typeof appId !== 'string' || typeof mToken !== 'string') {
     return NextResponse.json(
-      {
-        ok: false,
-        error: 'appId and mToken (string) are required in body',
-        step: 'db',
-      },
+      { ok: false, error: 'appId and mToken (string) are required in body', step: 'db' },
       { status: 400 }
     )
   }
@@ -74,7 +95,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
     const validateUrl = `https://api.egov.go.th/ws/auth/validate?ConsumerSecret=${encodeURIComponent(
       consumerSecret
     )}&AgentID=${encodeURIComponent(agentId)}`
- 
+
     const validateResp = await fetch(validateUrl, {
       method: 'GET',
       headers: {
@@ -83,24 +104,25 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
       },
     })
 
-    const validateJson: unknown = await validateResp.json().catch(() => null)
+    const v = await readResp(validateResp)
 
-    if (!validateResp.ok || !isValidateResponse(validateJson)) {
+    if (!validateResp.ok || !isValidateResponse(v.json)) {
       return NextResponse.json(
         {
           ok: false,
-          error: 'Failed to get Token from validate',
+          error: `Failed to get Token from validate (HTTP ${validateResp.status})`,
           step: 'validate',
-        },
+          // ช่วย debug ถ้า upstream ส่ง HTML/ข้อความแปลกๆมา
+          detail: v.text?.slice(0, 800) || '',
+        } as any,
         { status: 502 }
       )
     }
 
-    const apiToken: string = (validateJson as ValidateResponse).Result
+    const apiToken: string = (v.json as ValidateResponse).Result
 
     // Step 2: deproc
-    const deprocUrl =
-      'https://api.egov.go.th/ws/dga/czp/uat/v1/core/shield/data/deproc'
+    const deprocUrl = 'https://api.egov.go.th/ws/dga/czp/uat/v1/core/shield/data/deproc'
 
     const deprocResp = await fetch(deprocUrl, {
       method: 'POST',
@@ -115,20 +137,33 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
       }),
     })
 
-    const deprocJson: unknown = await deprocResp.json().catch(() => null)
+    const d = await readResp(deprocResp)
 
     if (!deprocResp.ok) {
       return NextResponse.json(
         {
           ok: false,
-          error: 'deproc API returned non-OK status',
+          error: `deproc API returned non-OK status (HTTP ${deprocResp.status})`,
           step: 'deproc',
-        },
+          detail: d.text?.slice(0, 800) || '',
+        } as any,
         { status: 502 }
       )
     }
 
-    const citizen: CitizenData | null = extractCitizenData(deprocJson)
+    if (!d.json) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'deproc response is not JSON or empty body',
+          step: 'deproc',
+          detail: d.text?.slice(0, 800) || '',
+        } as any,
+        { status: 502 }
+      )
+    }
+
+    const citizen: CitizenData | null = extractCitizenData(d.json)
 
     if (!citizen) {
       return NextResponse.json(
@@ -143,9 +178,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
 
     // Step 3: Notification (ถ้าเปิด)
     if (citizen.notification) {
-      const notificationUrl =
-        'https://api.egov.go.th/ws/dga/czp/uat/v1/core/notification/push'
-
+      const notificationUrl = 'https://api.egov.go.th/ws/dga/czp/uat/v1/core/notification/push'
       const nowIso = new Date().toISOString()
 
       const notificationBody = {
@@ -200,17 +233,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
       },
     })
 
-    const dto = toUserDto(savedUser)
-
-    return NextResponse.json<ApiResponse>({ ok: true, saved: dto })
+    return NextResponse.json<ApiResponse>({ ok: true, saved: toUserDto(savedUser) })
   } catch (error) {
     console.error(error)
     return NextResponse.json<ApiResponse>(
-      {
-        ok: false,
-        error: String(error),
-        step: 'db',
-      },
+      { ok: false, error: String(error), step: 'db' },
       { status: 500 }
     )
   }

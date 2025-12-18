@@ -10,7 +10,6 @@ import {
   FiLoader,
   FiAlertCircle,
   FiCheckCircle,
-  FiDatabase,
   FiUser,
 } from 'react-icons/fi'
 
@@ -45,15 +44,28 @@ const getAppIdAndMTokenFromSDK = (): AppTokenPair | null => {
   try {
     const appId = sdk.getAppId()
     const mToken = sdk.getToken()
-
-    if (!appId || !mToken) {
-      return null
-    }
-
+    if (!appId || !mToken) return null
     return { appId, mToken }
   } catch {
     return null
   }
+}
+
+/**
+ * อ่าน response แบบปลอดภัย: อ่านเป็น text ก่อน แล้วค่อย parse JSON
+ * ป้องกันเคส body ว่าง / ไม่ใช่ JSON / upstream ส่ง HTML กลับมา
+ */
+async function readApiResponse(resp: Response): Promise<{ json: any; text: string }> {
+  const text = await resp.text().catch(() => '')
+  const json = (() => {
+    if (!text || !text.trim()) return null
+    try {
+      return JSON.parse(text)
+    } catch {
+      return null
+    }
+  })()
+  return { json, text }
 }
 
 function ProductionPageInner() {
@@ -61,7 +73,7 @@ function ProductionPageInner() {
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
 
-  // ดึงค่า ?appId=...&mToken=... จาก URL
+  // ดึงค่า ?appId=...&mToken=... จาก URL (fallback)
   const searchParams = useSearchParams()
 
   useEffect(() => {
@@ -80,7 +92,7 @@ function ProductionPageInner() {
 
         if (!appId || !mToken) {
           setError(
-            'ไม่สามารถอ่าน appId/mToken ได้ทั้งจาก SDK และ URL (ตรวจสอบว่าเปิดผ่านแอปทางรัฐ MiniApp หรือแนบ ?appId=...&mToken=... มาหรือไม่)',
+            'ไม่สามารถอ่าน appId/mToken ได้ทั้งจาก SDK และ URL (ตรวจสอบว่าเปิดผ่านแอปทางรัฐ MiniApp หรือแนบ ?appId=...&mToken=... มาหรือไม่)'
           )
           return
         }
@@ -101,12 +113,20 @@ function ProductionPageInner() {
           body: JSON.stringify(pair),
         })
 
-        const data: ApiResponse = await response.json()
+        // ✅ สำคัญ: ห้ามใช้ response.json() ตรงๆ
+        const { json, text } = await readApiResponse(response)
 
         if (!response.ok) {
-          setError(`HTTP error: ${response.status}`)
+          setError(`HTTP error: ${response.status}\n${text.slice(0, 800)}`)
           return
         }
+
+        if (!json) {
+          setError(`Invalid/empty JSON from /api/dga\n${text.slice(0, 800)}`)
+          return
+        }
+
+        const data = json as ApiResponse
 
         if (!data.ok) {
           setError(data.error)
@@ -136,6 +156,7 @@ function ProductionPageInner() {
               </span>
               <span>Production · SDK Mode</span>
             </div>
+
             <div>
               <h1 className="text-xl font-semibold tracking-tight">
                 DGA Miniapp – ตรวจสอบข้อมูลผู้ใช้
@@ -164,8 +185,8 @@ function ProductionPageInner() {
             </div>
           </div>
 
-          {/* Link ไปยัง Page local (comment ไว้) */}
-          {/* ... */}
+          {/* (optional) ใส่ปุ่มกลับ/ลิงก์อื่นได้ */}
+          {/* <Link ...>...</Link> */}
         </header>
 
         {/* Main content */}
@@ -183,7 +204,7 @@ function ProductionPageInner() {
                 </p>
               </div>
 
-              {/* Badge ที่เปลี่ยนตามสถานะ */}
+              {/* Badge ตามสถานะ */}
               <div>
                 {loading && (
                   <span className="inline-flex items-center gap-2 rounded-full bg-slate-800 px-3 py-1 text-xs font-medium text-slate-200">
@@ -222,11 +243,7 @@ function ProductionPageInner() {
                 </p>
               )}
 
-              {error && (
-                <p className="whitespace-pre-wrap text-red-300">
-                  {error}
-                </p>
-              )}
+              {error && <p className="whitespace-pre-wrap text-red-300">{error}</p>}
 
               {!loading && !error && !result && (
                 <p className="text-slate-300">
@@ -235,9 +252,7 @@ function ProductionPageInner() {
               )}
 
               {!loading && !error && result && (
-                <p className="text-emerald-300">
-                  ดึงข้อมูลผู้ใช้สำเร็จ และบันทึกลงฐานข้อมูลแล้ว
-                </p>
+                <p className="text-emerald-300">ดึงข้อมูลผู้ใช้สำเร็จ และบันทึกลงฐานข้อมูลแล้ว</p>
               )}
             </div>
           </section>
@@ -260,25 +275,23 @@ function ProductionPageInner() {
                     {result.firstName ?? '-'} {result.lastName ?? ''}
                   </p>
                 </div>
+
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
                     <p className="text-slate-400">Citizen ID</p>
-                    <p className="font-medium text-slate-100">
-                      {result.citizenId ?? '-'}
-                    </p>
+                    <p className="font-medium text-slate-100">{result.citizenId ?? '-'}</p>
                   </div>
+
                   <div>
                     <p className="text-slate-400">Mobile</p>
-                    <p className="font-medium text-slate-100">
-                      {result.mobile ?? '-'}
-                    </p>
+                    <p className="font-medium text-slate-100">{result.mobile ?? '-'}</p>
                   </div>
+
                   <div>
                     <p className="text-slate-400">Email</p>
-                    <p className="font-medium text-slate-100">
-                      {result.email ?? '-'}
-                    </p>
+                    <p className="font-medium text-slate-100">{result.email ?? '-'}</p>
                   </div>
+
                   <div>
                     <p className="text-slate-400">Notification</p>
                     <p className="font-medium">
@@ -303,22 +316,7 @@ function ProductionPageInner() {
           </section>
         </main>
 
-        {/* Raw JSON */}
-        <section className="mb-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-inner shadow-black/40">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-              <FiDatabase className="h-4 w-4 text-emerald-300" />
-              <span>Raw JSON (จากฐานข้อมูล)</span>
-            </h2>
-            <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-400">
-              สำหรับตรวจสอบ / debug
-            </span>
-          </div>
-
-          <pre className="mt-3 max-h-72 overflow-auto rounded-lg bg-black/80 p-4 text-xs font-mono text-emerald-300">
-            {result ? JSON.stringify(result, null, 2) : 'No result'}
-          </pre>
-        </section>
+        {/* ✅ ลบ Raw JSON ออกแล้ว ตามที่ขอ */}
       </div>
     </div>
   )
