@@ -165,7 +165,7 @@ function ProductionPageInner() {
               <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-800">
                 <FiActivity className="h-3 w-3 text-emerald-400" />
               </span>
-              <span>Production · SDK Mode</span>
+              <span>Production · SDK Mode V2</span>
             </div>
 
             <div>
