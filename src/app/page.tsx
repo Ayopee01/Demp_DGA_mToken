@@ -107,7 +107,11 @@ function ProductionPageInner() {
           }
         }
 
-        const response = await fetch('/api/dga', {
+        const basePath =
+          process.env.NEXT_PUBLIC_BASE_PATH ??
+          '' // ถ้าไม่ตั้ง env ก็เป็นค่าว่าง
+
+        const response = await fetch(`${basePath}/api/dga`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(pair),
